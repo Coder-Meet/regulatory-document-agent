@@ -2,7 +2,11 @@ name: Document Agent
 
 # Free, server-less hosting: GitHub runs the agent on a schedule. The agent
 # pulls requests from Gmail over IMAP, so no public server / inbound port is
-# needed. Each run does ONE pass; the \Seen flag makes runs idempotent.
+# needed. The \Seen flag makes runs idempotent.
+#
+# GitHub cron can't fire faster than every 5 minutes, so for ~1-minute response
+# each scheduled run loops INTERNALLY every 60s for just under 5 minutes and then
+# exits, letting the next cron run take over seamlessly (no overlap, no pile-up).
 
 on:
   schedule:
@@ -32,7 +36,7 @@ jobs:
           pip install -r requirements.txt
           python -m playwright install --with-deps chromium
 
-      - name: Run agent (one pass)
+      - name: Run agent (polls every 60s for ~5 minutes)
         env:
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
           EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
@@ -46,4 +50,5 @@ jobs:
           MAX_EMAILS_TO_SCAN: "25"
           OPENROUTER_MODEL: openai/gpt-4o-mini
           HEADLESS: "true"
-        run: python agent.py
+        # Poll every 60s, but stop before the next 5-min cron fires.
+        run: python agent.py --loop --interval 60 --max-runtime 270

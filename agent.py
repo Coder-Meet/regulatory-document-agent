@@ -795,10 +795,20 @@ def run_once(cfg: Config) -> int:
     return handled
 
 
-def run_loop(cfg: Config) -> int:
-    """Poll the inbox forever, handling new requests as they arrive."""
-    log.info("Starting agent in loop mode (every %ds). Press Ctrl+C to stop.",
-             cfg.poll_interval)
+def run_loop(cfg: Config, max_runtime: Optional[int] = None) -> int:
+    """Poll the inbox, handling new requests as they arrive.
+
+    Runs until interrupted, or (if ``max_runtime`` is set) until that many
+    seconds have elapsed. The bounded mode lets a scheduler (e.g. a GitHub
+    Actions cron) restart the agent without overlapping runs while still polling
+    on a short interval.
+    """
+    import time
+
+    interval = max(5, cfg.poll_interval)
+    started = time.monotonic()
+    log.info("Starting agent in loop mode (every %ds%s). Press Ctrl+C to stop.",
+             interval, f", for up to {max_runtime}s" if max_runtime else "")
     if cfg.agent_address:
         log.info("Listening for requests addressed to: %s", cfg.agent_address)
     else:
@@ -810,8 +820,11 @@ def run_loop(cfg: Config) -> int:
                 run_once(cfg)
             except Exception as exc:
                 log.error("Cycle failed: %s", exc)
-            import time
-            time.sleep(max(5, cfg.poll_interval))
+            if max_runtime is not None and (time.monotonic() - started) + interval >= max_runtime:
+                log.info("Reached max runtime (%ds); exiting for scheduler restart.",
+                         max_runtime)
+                break
+            time.sleep(interval)
     except KeyboardInterrupt:
         log.info("Stopped by user.")
     return 0
@@ -828,6 +841,9 @@ def main() -> int:
     parser.add_argument("--interval", type=int, default=None,
                         help="Polling interval in seconds for --loop "
                              "(overrides POLL_INTERVAL_SECONDS).")
+    parser.add_argument("--max-runtime", type=int, default=None,
+                        help="With --loop, exit after this many seconds "
+                             "(useful for scheduler-restarted runs).")
     args = parser.parse_args()
 
     cfg = Config()
@@ -835,7 +851,7 @@ def main() -> int:
         cfg.poll_interval = args.interval
 
     if args.loop:
-        return run_loop(cfg)
+        return run_loop(cfg, max_runtime=args.max_runtime)
     run_once(cfg)
     log.info("Done.")
     return 0
