@@ -258,7 +258,7 @@ def find_requests(cfg: Config) -> list:
                     uid=uid,
                     sender=sender,
                     subject=subject,
-                    message_id=msg.get("Message-ID", ""),
+                    message_id=_sanitize_header(msg.get("Message-ID", "")),
                     matter_number=matter_number,
                     doc_type=doc_type,
                 ))
@@ -732,16 +732,22 @@ def generate_summary(cfg: Config, data: MatterData, doc_type: str, downloaded: i
 # --------------------------------------------------------------------------- #
 
 
+def _sanitize_header(value: str) -> str:
+    """Strip whitespace/newlines — required for RFC-compliant email headers."""
+    return " ".join((value or "").split())
+
+
 def send_reply(cfg: Config, req: EmailRequest, body: str, zip_path: str) -> None:
     """Reply to the original sender with the summary and the ZIP attached."""
     msg = EmailMessage()
-    msg["From"] = cfg.email_address
-    msg["To"] = req.sender
-    subject = req.subject or f"Documents for {req.matter_number}"
+    msg["From"] = _sanitize_header(cfg.email_address)
+    msg["To"] = _sanitize_header(req.sender)
+    subject = _sanitize_header(req.subject or f"Documents for {req.matter_number}")
     msg["Subject"] = subject if subject.lower().startswith("re:") else f"Re: {subject}"
     if req.message_id:
-        msg["In-Reply-To"] = req.message_id
-        msg["References"] = req.message_id
+        mid = _sanitize_header(req.message_id)
+        msg["In-Reply-To"] = mid
+        msg["References"] = mid
     msg.set_content(body)
 
     if zip_path and os.path.exists(zip_path):
