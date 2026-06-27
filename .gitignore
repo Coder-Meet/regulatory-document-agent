@@ -1,0 +1,13 @@
+# Secrets / config
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Runtime artifacts
+attachments.zip
+downloads/
+*.log
