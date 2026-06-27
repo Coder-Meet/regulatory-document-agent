@@ -1,0 +1,49 @@
+name: Document Agent
+
+# Free, server-less hosting: GitHub runs the agent on a schedule. The agent
+# pulls requests from Gmail over IMAP, so no public server / inbound port is
+# needed. Each run does ONE pass; the \Seen flag makes runs idempotent.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"     # every 5 minutes (GitHub's minimum granularity)
+  workflow_dispatch: {}        # allow manual runs from the Actions tab
+
+# Never let two runs process the inbox at the same time (avoids double replies).
+concurrency:
+  group: document-agent
+  cancel-in-progress: false
+
+jobs:
+  poll-inbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Run agent (one pass)
+        env:
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
+          AGENT_ADDRESS: ${{ secrets.AGENT_ADDRESS }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          IMAP_HOST: imap.gmail.com
+          IMAP_PORT: "993"
+          SMTP_HOST: smtp.gmail.com
+          SMTP_PORT: "587"
+          MAILBOX: INBOX
+          MAX_EMAILS_TO_SCAN: "25"
+          OPENROUTER_MODEL: openai/gpt-4o-mini
+          HEADLESS: "true"
+        run: python agent.py
