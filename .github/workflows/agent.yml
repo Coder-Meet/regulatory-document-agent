@@ -11,6 +11,8 @@ name: Document Agent
 on:
   schedule:
     - cron: "*/5 * * * *"     # every 5 minutes (GitHub's minimum granularity)
+  push:
+    branches: [main]           # run on every deploy so fixes take effect immediately
   workflow_dispatch: {}        # allow manual runs from the Actions tab
 
 # Never let two runs process the inbox at the same time (avoids double replies).

@@ -179,13 +179,19 @@ def parse_request_text(body: str) -> tuple[Optional[str], Optional[str]]:
     matter_match = re.search(r"\bM\d{5}\b", body, re.IGNORECASE)
     matter_number = matter_match.group(0).upper() if matter_match else None
 
-    # Match the most specific phrases first so "Key/Other Documents" win over
-    # a bare "Documents", and the canonical casing is always returned.
-    ordered = ["Key Documents", "Other Documents", "Exhibits", "Transcripts", "Recordings"]
+    # Match the most specific phrases first. Accept singular/plural and minor
+    # wording variants ("key document", "Key Documents", etc.).
+    type_patterns = [
+        ("Key Documents", r"\bkey\s+documents?\b"),
+        ("Other Documents", r"\bother\s+documents?\b"),
+        ("Exhibits", r"\bexhibits?\b"),
+        ("Transcripts", r"\btranscripts?\b"),
+        ("Recordings", r"\brecordings?\b"),
+    ]
     doc_type = None
-    for candidate in ordered:
-        if re.search(rf"\b{re.escape(candidate)}\b", body, re.IGNORECASE):
-            doc_type = candidate
+    for canonical, pattern in type_patterns:
+        if re.search(pattern, body, re.IGNORECASE):
+            doc_type = canonical
             break
 
     return matter_number, doc_type
