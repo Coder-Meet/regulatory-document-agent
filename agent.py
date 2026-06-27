@@ -179,11 +179,10 @@ def parse_request_text(body: str) -> tuple[Optional[str], Optional[str]]:
     matter_match = re.search(r"\bM\d{5}\b", body, re.IGNORECASE)
     matter_number = matter_match.group(0).upper() if matter_match else None
 
-    # Match the most specific phrases first. Accept singular/plural and minor
-    # wording variants ("key document", "Key Documents", etc.).
+    # Most-specific first. ``doc\\w*`` tolerates typos like "documnets" / "docs".
     type_patterns = [
-        ("Key Documents", r"\bkey\s+documents?\b"),
-        ("Other Documents", r"\bother\s+documents?\b"),
+        ("Key Documents", r"\bkey\s+doc\w*"),
+        ("Other Documents", r"\bother\s+doc\w*"),
         ("Exhibits", r"\bexhibits?\b"),
         ("Transcripts", r"\btranscripts?\b"),
         ("Recordings", r"\brecordings?\b"),
@@ -193,6 +192,12 @@ def parse_request_text(body: str) -> tuple[Optional[str], Optional[str]]:
         if re.search(pattern, body, re.IGNORECASE):
             doc_type = canonical
             break
+
+    # Last resort: matter present and only a generic "docs/documents" mention.
+    if matter_number and not doc_type:
+        lower = body.lower()
+        if re.search(r"\bdoc\w*\b", lower) and not re.search(r"\bother\b", lower):
+            doc_type = "Key Documents"
 
     return matter_number, doc_type
 

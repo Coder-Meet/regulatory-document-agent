@@ -23,7 +23,7 @@ concurrency:
 jobs:
   poll-inbox:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -53,5 +53,5 @@ jobs:
           MAX_ATTACHMENT_MB: "25"
           OPENROUTER_MODEL: openai/gpt-4o-mini
           HEADLESS: "true"
-        # Poll every 60s, but stop before the next 5-min cron fires.
-        run: python agent.py --loop --interval 60 --max-runtime 270
+        # Poll every 30s for ~14 min — GitHub cron is often delayed on free tier.
+        run: python agent.py --loop --interval 30 --max-runtime 840
