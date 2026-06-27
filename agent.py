@@ -92,6 +92,10 @@ class Config:
     agent_address: str = _env("AGENT_ADDRESS", "").strip()
     # How often to re-check the inbox when running in --loop mode (seconds).
     poll_interval: int = int(_env("POLL_INTERVAL_SECONDS", "60"))
+    # Email size budget (MB). Gmail rejects messages over ~25 MB *after* base64
+    # encoding, so the on-disk ZIP is capped lower (see handle_request) and only
+    # includes as many downloaded files as fit.
+    max_attachment_mb: int = int(_env("MAX_ATTACHMENT_MB", "25"))
 
 
 # --------------------------------------------------------------------------- #
@@ -600,14 +604,40 @@ def scrape_matter(cfg: Config, matter_number: str, doc_type: str, dest_dir: str)
 # --------------------------------------------------------------------------- #
 
 
-def zip_files(files: list, zip_path: str) -> str:
-    """Compress `files` into a single ZIP at `zip_path` (created even if empty)."""
+def zip_files(files: list, zip_path: str, max_bytes: Optional[int] = None) -> list:
+    """Compress files into a single ZIP, keeping it under `max_bytes`.
+
+    Files are added in order; any file that would push the total over the cap is
+    skipped (so the attachment always fits an email). Since PDFs barely compress,
+    gating on raw size is a safe over-estimate. Returns the files actually added.
+    """
+    present = [f for f in files if os.path.exists(f)]
+
+    # Choose which files to include. With a cap, pick smallest-first so the most
+    # documents fit under the limit; otherwise keep the original order.
+    if max_bytes is not None:
+        candidates = sorted(present, key=os.path.getsize)
+        chosen, total = [], 0
+        for f in candidates:
+            size = os.path.getsize(f)
+            if total + size > max_bytes:
+                continue
+            chosen.append(f)
+            total += size
+    else:
+        chosen = present
+
+    included = [f for f in present if f in set(chosen)]  # preserve original order
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for f in files:
-            if os.path.exists(f):
-                zf.write(f, arcname=os.path.basename(f))
-    log.info("Wrote %s (%d file(s)).", zip_path, len(files))
-    return zip_path
+        for f in included:
+            zf.write(f, arcname=os.path.basename(f))
+
+    if len(included) < len(present):
+        log.warning("Attachment cap (%.0f MB): included %d of %d file(s).",
+                    (max_bytes or 0) / 1e6, len(included), len(present))
+    else:
+        log.info("Wrote %s (%d file(s)).", zip_path, len(included))
+    return included
 
 
 # --------------------------------------------------------------------------- #
@@ -755,9 +785,13 @@ def handle_request(cfg: Config, req: EmailRequest) -> bool:
         data = scrape_matter(cfg, req.matter_number, req.doc_type, download_dir)
 
         zip_path = os.path.join(workdir, "attachments.zip")
-        zip_files(data.downloaded_files, zip_path)
+        # Base64 encoding inflates an attachment by ~37%, so cap the raw ZIP at
+        # ~70% of the message budget to stay under the limit once encoded.
+        raw_cap = int(cfg.max_attachment_mb * 1_000_000 * 0.70)
+        attached = zip_files(data.downloaded_files, zip_path, max_bytes=raw_cap)
 
-        body = generate_summary(cfg, data, req.doc_type, len(data.downloaded_files))
+        # Report the number actually attached (some may be dropped to fit email).
+        body = generate_summary(cfg, data, req.doc_type, len(attached))
         log.info("Email body:\n%s", body)
 
         try:

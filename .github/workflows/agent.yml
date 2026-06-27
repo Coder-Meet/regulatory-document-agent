@@ -48,6 +48,7 @@ jobs:
           SMTP_PORT: "587"
           MAILBOX: INBOX
           MAX_EMAILS_TO_SCAN: "25"
+          MAX_ATTACHMENT_MB: "25"
           OPENROUTER_MODEL: openai/gpt-4o-mini
           HEADLESS: "true"
         # Poll every 60s, but stop before the next 5-min cron fires.
