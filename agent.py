@@ -656,12 +656,28 @@ def zip_files(files: list, zip_path: str, max_bytes: Optional[int] = None) -> li
 # --------------------------------------------------------------------------- #
 
 
+def _display_title(data: MatterData) -> str:
+    """Best available human-readable matter name when the portal title is blank."""
+    if data.title_description:
+        return data.title_description
+    if data.category:
+        return data.category
+    if data.matter_type:
+        return data.matter_type
+    return "this matter"
+
+
+def _amount_suffix(data: MatterData) -> str:
+    """Dollar amount suffix for the opening clause, or empty if not on the portal."""
+    return f" {data.amount}" if data.amount else ""
+
+
 def _template_summary(data: MatterData, doc_type: str, downloaded: int) -> str:
     """Deterministic fallback summary in the exact required structure."""
     c = data.counts
     transcripts_recordings = c.get("Transcripts", 0) + c.get("Recordings", 0)
-    title = data.title_description or "this matter"
-    amount = f" {data.amount}" if data.amount else ""
+    title = _display_title(data)
+    amount = _amount_suffix(data)
     return (
         f"{data.matter_number} is about the {title}{amount}. "
         f"It relates to {data.category or 'N/A'} within the {data.matter_type or 'N/A'} category. "
@@ -680,8 +696,8 @@ def generate_summary(cfg: Config, data: MatterData, doc_type: str, downloaded: i
     c = data.counts
     facts = {
         "matter_number": data.matter_number,
-        "title_description": data.title_description,
-        "amount": data.amount,
+        "title_description": _display_title(data),
+        "amount": data.amount or None,
         "type": data.matter_type,
         "category": data.category,
         "initial_filing_date": data.initial_filing,
@@ -695,8 +711,9 @@ def generate_summary(cfg: Config, data: MatterData, doc_type: str, downloaded: i
         "number_downloaded": downloaded,
     }
 
+    amount_clause = " $[Amount]" if data.amount else ""
     template = (
-        "[Matter Number] is about the [Title Description] $[Amount]. It relates to "
+        f"[Matter Number] is about the [Title Description]{amount_clause}. It relates to "
         "[Category] within the [Type] category. The matter had an initial filing on "
         "[Date Recalled] and a final filing on [Date Final Submissions]. I found "
         "[X] Exhibits, [Y] Key Documents, [Z] Other Documents, and [A] Transcripts "
@@ -710,9 +727,13 @@ def generate_summary(cfg: Config, data: MatterData, doc_type: str, downloaded: i
         "EXACT structure, substituting the bracketed placeholders and removing the "
         "brackets. Do not add greetings, sign-offs, markdown, or any extra text.\n\n"
         f"STRUCTURE:\n{template}\n\n"
-        "Notes: '$[Amount]' should render the amount exactly as given (it already "
-        "includes the $ sign, so do not add another). '[A] Transcripts or "
-        "Recordings' uses the combined transcripts_or_recordings count.\n\n"
+        "Notes:\n"
+        "- If amount is null/missing, the structure has NO dollar amount — do not "
+        "write '$ amount', 'N/A', or any placeholder.\n"
+        "- If title_description was derived from category/type, use it as-is.\n"
+        "- '$[Amount]' must render the amount exactly as given when present (it "
+        "already includes the $ sign).\n"
+        "- '[A] Transcripts or Recordings' uses transcripts_or_recordings.\n\n"
         f"FACTS (JSON):\n{facts}"
     )
 
